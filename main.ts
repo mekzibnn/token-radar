@@ -20,10 +20,9 @@ import { fileURLToPath } from 'node:url';
 import { 
   parseSnapshot, 
   buildRadar, 
-  dataScript, 
-  Snapshot, 
-  BoardRow 
+  dataScript
 } from './lib/model.ts';
+import type { Snapshot, BoardRow } from './lib/model.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
 
 // Constants for gate validation and dossier generation
