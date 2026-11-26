@@ -45,7 +45,7 @@ export const MODEL: ModelConstants = {
 export const MODEL_VERSION = 'radar-v2-log';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
-export const EARLY_ROWS = 250;
+export const EARLY_ROWS = 700;
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 48;
@@ -70,7 +70,7 @@ export interface BoardRow {
   listed_at: string | null;
   gecko_id: string | null;
   symbol: string | null;
-  token_status: 'pre-token';
+  token_status: 'pre-token' | 'live';
   age_days: number | null;
   implied_value_usd: number;
   model: {
@@ -152,18 +152,64 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
   return Math.max(0, Math.floor((a - b) / DAY_MS));
 }
 
+/** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
+const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
+
+/** Whether a protocol records no token at all. */
+export function isPreToken(p: SnapshotProtocol): boolean {
+  return p.mcap_usd === null && p.gecko_id === null && p.symbol === null;
+}
+
+/** Whether a protocol is one the board may rank: not an exchange, not a versioned pool. */
+export function isRankable(p: SnapshotProtocol): boolean {
+  return p.category !== 'CEX' && !VERSIONED.test(p.name);
+}
+
+/** The snapshot's protocol by slug. */
+function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
+  return new Map(protocols.map((p) => [p.slug, p]));
+}
+
+/** Calculate median implied-value-per-log-TVL for each category. */
+function getCategoryStrengths(scored: {p: SnapshotProtocol, baseStrength: number}[]): {
+  categoryMedians: Map<string, number>,
+  globalMedian: number
+} {
+  const categories = new Map<string, number[]>();
+  for (const {p, baseStrength} of scored) {
+    const cat = p.category ?? 'Other';
+    if (!categories.has(cat)) categories.set(cat, []);
+    categories.get(cat)!.push(baseStrength);
+  }
+  const medians = new Map<string, number>();
+  const allStrengths: number[] = [];
+  for (const [cat, strengths] of categories) {
+    strengths.sort((a, b) => a - b);
+    const mid = Math.floor(strengths.length / 2);
+    const median = strengths.length % 2 !== 0 ? strengths[mid]! : (strengths[mid - 1]! + strengths[mid]!) / 2;
+    medians.set(cat, median);
+    allStrengths.push(median);
+  }
+  
+  allStrengths.sort((a, b) => a - b);
+  const mid = Math.floor(allStrengths.length / 2);
+  const globalMedian = allStrengths.length % 2 !== 0 ? allStrengths[mid]! : (allStrengths[mid - 1]! + allStrengths[mid]!) / 2;
+  
+  return { categoryMedians: medians, globalMedian };
+}
+
 /**
  * Implied Value Model v2 (Radar-v2-log):
  * 1. Log-scaled TVL base: uses log10(TVL) to anchor valuation.
  * 2. Damped Growth: Uses sign(g) * log1p(abs(g)) to normalize growth spikes.
  * 3. Longevity Bonus: Linear bonus for age up to longevity_cap_years.
- * 4. Category Relative Factor: Multiplier based on TVL relative to category median.
+ * 4. Category Relative Factor: Multiplier based on category strength.
  */
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
   model: ModelConstants,
-  categoryMedians: Map<string, number>,
+  categoryMult: number = 1.0,
 ): { implied: number; growthPct: number; growthMult: number; longevityMult: number; categoryMult: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
   const rawGrowth = finite(protocol.change_7d, 0);
@@ -179,11 +225,6 @@ export function impliedValue(
   const ageYears = (age ?? 365) / 365;
   const longevityMult = 1 + Math.min(ageYears, model.longevity_cap_years) * model.longevity_weight;
 
-  // 4. Category Relative Factor
-  const median = categoryMedians.get(protocol.category ?? 'Other') ?? 1_000_000;
-  const relTvl = protocol.tvl_usd / median;
-  const categoryMult = 1 + (Math.log10(Math.max(0.1, relTvl)) * model.category_weight);
-
   // Final Implied Value
   // Anchor on TVL, but scale it so it's not purely linear (TVL is often "rented" capital).
   const base = protocol.tvl_usd * model.base_multiple;
@@ -194,45 +235,9 @@ export function impliedValue(
   return { implied, growthPct: rawGrowth, growthMult, longevityMult, categoryMult, age };
 }
 
-/** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
-const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
-
-/** Whether a protocol records no token at all. */
-export function isPreToken(p: SnapshotProtocol): boolean {
-  return p.mcap_usd === null && p.gecko_id === null && p.symbol === null;
-}
-
-/** Whether a protocol is one the board may rank: pre-token, not an exchange, not a versioned pool. */
-export function isRankable(p: SnapshotProtocol): boolean {
-  return isPreToken(p) && p.category !== 'CEX' && !VERSIONED.test(p.name);
-}
-
-/** The snapshot's protocol by slug. */
-function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
-  return new Map(protocols.map((p) => [p.slug, p]));
-}
-
-/** Calculate median TVL for each category. */
-function getCategoryMedians(protocols: SnapshotProtocol[]): Map<string, number> {
-  const categories = new Map<string, number[]>();
-  for (const p of protocols) {
-    const cat = p.category ?? 'Other';
-    if (!categories.has(cat)) categories.set(cat, []);
-    categories.get(cat)!.push(p.tvl_usd);
-  }
-  const medians = new Map<string, number>();
-  for (const [cat, tvls] of categories) {
-    tvls.sort((a, b) => a - b);
-    const mid = Math.floor(tvls.length / 2);
-    medians.set(cat, tvls.length % 2 !== 0 ? tvls[mid]! : (tvls[mid - 1]! + tvls[mid]!) / 2);
-  }
-  return medians;
-}
-
 /** The protocols the board ranks, strongest first, with ranks 1..n. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
   const index = bySlug(snapshot.protocols);
-  const medians = getCategoryMedians(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
 
   for (const slug of snapshot.watchlist) {
@@ -241,13 +246,27 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
   }
 
   const early = snapshot.protocols
-    .filter((p) => !chosen.has(p.slug) && isRankable(p) && p.tvl_usd < snapshot.floor_usd)
-    .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0))
-    .slice(0, EARLY_ROWS);
+    .filter((p) => !chosen.has(p.slug) && isRankable(p))
+    .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   for (const p of early) chosen.set(p.slug, p);
 
-  const scored = [...chosen.values()].map((p) => {
-    const { implied, growthPct, growthMult, longevityMult, categoryMult, age } = impliedValue(p, snapshot.as_of, model, medians);
+  // First pass: calculate base implied values without category factor
+  const baseScored = [...chosen.values()].map((p) => {
+    const logTvl = Math.log10(Math.max(1, p.tvl_usd));
+    const { implied } = impliedValue(p, snapshot.as_of, model, 1.0);
+    const baseStrength = implied / logTvl;
+    return { p, baseStrength };
+  });
+
+  const { categoryMedians, globalMedian } = getCategoryStrengths(baseScored);
+
+  // Second pass: apply category factor
+  const scored = baseScored.map(({p, baseStrength}) => {
+    const catMedian = categoryMedians.get(p.category ?? 'Other') ?? globalMedian;
+    let categoryMult = catMedian / globalMedian;
+    categoryMult = Math.max(0.7, Math.min(1.4, categoryMult));
+    
+    const { implied, growthPct, growthMult, longevityMult, age } = impliedValue(p, snapshot.as_of, model, categoryMult);
     return { p, implied, growthPct, growthMult, longevityMult, categoryMult, age };
   });
 
@@ -266,7 +285,7 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     listed_at: s.p.listed_at,
     gecko_id: s.p.gecko_id,
     symbol: s.p.symbol,
-    token_status: 'pre-token',
+    token_status: isPreToken(s.p) ? 'pre-token' : 'live',
     age_days: s.age,
     implied_value_usd: s.implied,
     model: {

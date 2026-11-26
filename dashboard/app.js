@@ -153,10 +153,15 @@
         ${state.tab === 'pre-token' ? `
         <div class="detail-section">
           <h3>Model Breakdown</h3>
-          <div class="model-row"><span>Growth Mult</span><span>${r.growth_multiplier}x</span></div>
-          <div class="model-row"><span>Longevity Mult</span><span>${r.longevity_multiplier}x</span></div>
-          <div class="model-row"><span>Category Mult</span><span>${r.category_multiplier}x</span></div>
-          <div class="model-row" style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.5rem; font-weight: 700; color: var(--accent);">
+          <div class="model-row"><span>TVL (log base)</span><span>$${r.tvl_usd.toLocaleString('en-US', {maximumFractionDigits: 0})}</span></div>
+          <div class="model-bar-row"><span>Growth ${r.growth_multiplier.toFixed(2)}x</span><div class="model-bar-track"><div class="model-bar" style="width:${Math.min(100, Math.round((r.growth_multiplier - 0.5) * 100))}%; background: var(--accent);"></div></div></div>
+          <div class="model-bar-row"><span>Longevity ${r.longevity_multiplier.toFixed(2)}x</span><div class="model-bar-track"><div class="model-bar" style="width:${Math.min(100, Math.round((r.longevity_multiplier - 0.5) * 100))}%; background: var(--accent-soft);"></div></div></div>
+          <div class="model-bar-row"><span>Category ${r.category_multiplier.toFixed(2)}x</span><div class="model-bar-track"><div class="model-bar" style="width:${Math.min(100, Math.round((r.category_multiplier - 0.5) * 100))}%; background: var(--warn);"></div></div></div>
+          <div class="model-row"><span>7D growth</span><span class="${r.change_7d >= 0 ? 'pos' : 'neg'}">${fmt.pct(r.change_7d)} (damped)</span></div>
+          <p class="why-ranked" style="margin-top: 0.75rem; font-size: 0.78rem; line-height: 1.5; color: var(--text-muted);">
+            <strong style="color: var(--text);">Why ranked #${r.rank}:</strong> its $${fmt.usd(r.tvl_usd)} TVL anchors the log-scale base, ${(r.change_7d >= 0 ? 'growing' : 'shrinking')} ${fmt.pct(Math.abs(r.change_7d))} over 7 days, ${fmt.age(r.age_days)} of operating history, and a category factor of ${r.category_multiplier.toFixed(2)}x versus the global median.
+          </p>
+          <div class="model-row" style="margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.5rem; font-weight: 700; color: var(--accent);">
             <span>Implied Value</span><span>${fmt.usd(r.implied_value_usd)}</span>
           </div>
         </div>` : ''}

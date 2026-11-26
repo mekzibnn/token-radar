@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Token Radar | Institutional Analysis</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="container" id="app">
+    <header>
+      <div class="logo">TOKEN RADAR</div>
+      <p class="model-note" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem; letter-spacing: 0.01em;">
+        Implied value = TVL (log-scaled) &times; damped 7-day growth &times; longevity (age, capped 3y) &times; category factor &mdash; calibrated per category median, no hardcoded names. Model <code>radar-v2-log</code>.
+      </p>
+      <div class="meta" id="header-meta">
+        <!-- Rendered by JS -->
+      </div>
+    </header>
+
+    <div class="stats-grid" id="stats">
+      <!-- Rendered by JS -->
+    </div>
+
+    <div class="controls">
+      <div class="search-box">
+        <input type="text" id="search" placeholder="Filter by protocol, category, or chain..." autocomplete="off">
+      </div>
+      <select id="category-filter">
+        <option value="all">All Categories</option>
+      </select>
+      <select id="chain-filter">
+        <option value="all">All Chains</option>
+      </select>
+      <div class="tabs">
+        <div class="tab active" data-tab="pre-token">Pre-token</div>
+        <div class="tab" data-tab="live">Live Tokens</div>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table id="main-table">
+        <thead>
+          <tr id="table-head">
+            <!-- Rendered by JS -->
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <!-- Rendered by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <button class="close-modal" id="close-modal">&times;</button>
+      <div id="modal-content">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </div>
+
+  <script src="../data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
